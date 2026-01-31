@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+    environment:
+      - VITE_API_URL=http://localhost:3001
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3001"
+    environment:
+      - OLLAMA_URL=http://192.168.4.13:11434
+      - SMTP_HOST=smtp
+      - SMTP_PORT=25
+      - DB_PATH=/app/data/scores.db
+    volumes:
+      - game_data:/app/data
+    depends_on:
+      - smtp
+
+  smtp:
+    image: boky/postfix:latest
+    ports:
+      - "25:25"
+    environment:
+      - ALLOWED_SENDER_DOMAINS=gamemaker.local localhost
+      - HOSTNAME=smtp.gamemaker.local
+
+volumes:
+  game_data:

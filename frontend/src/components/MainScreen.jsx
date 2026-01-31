@@ -1,0 +1,64 @@
+import React, { useState } from 'react';
+import GameCanvas from './GameCanvas';
+
+function MainScreen({ 
+  onCharacterMaker, 
+  onJsonEditor, 
+  onShare, 
+  onFight, 
+  onObjects,
+  onScoreboard,
+  character1, 
+  character2, 
+  gameData,
+  objects 
+}) {
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  return (
+    <div className="main-screen">
+      <h1>🎮 Game Maker</h1>
+      
+      <div className="button-row">
+        <button className="btn btn-primary" onClick={onCharacterMaker}>
+          🎨 Characters
+        </button>
+        <button className="btn btn-secondary" onClick={onJsonEditor}>
+          📝 JSON Editor
+        </button>
+        <button className="btn btn-objects" onClick={onObjects}>
+          🏠 Objects
+        </button>
+        <button className="btn btn-fight" onClick={onFight}>
+          ⚔️ Fight!
+        </button>
+        <button className="btn btn-scores" onClick={onScoreboard}>
+          🏆 Scores
+        </button>
+        <button className="btn btn-accent" onClick={onShare}>
+          📤 Share
+        </button>
+      </div>
+      
+      <div className="preview-section">
+        <h2>Preview</h2>
+        <GameCanvas 
+          character1={character1}
+          character2={character2}
+          gameData={gameData}
+          objects={objects}
+          isPlaying={isPlaying}
+          onComplete={() => setIsPlaying(false)}
+        />
+        <button 
+          className="btn btn-play" 
+          onClick={() => setIsPlaying(!isPlaying)}
+        >
+          {isPlaying ? '⏹ Stop' : '▶ Play'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default MainScreen;
