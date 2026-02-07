@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import BackgroundSelector from './BackgroundSelector';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { API_URL } from '../utils/api';
 
 const WEAPONS = [
   { id: 'sword', name: '⚔️ Sword', desc: 'Classic blade' },
@@ -11,14 +12,16 @@ const WEAPONS = [
   { id: 'mace', name: '💥 Mace', desc: 'Medieval pain' }
 ];
 
-function FightSetup({ onStartFight, onCancel }) {
-  const [player1Name, setPlayer1Name] = useState('');
-  const [player2Name, setPlayer2Name] = useState('');
+function FightSetup({ onStartFight, onCancel, multiplayerGameData = null }) {
+  const [player1Name, setPlayer1Name] = useState(multiplayerGameData?.players?.[0]?.username || '');
+  const [player2Name, setPlayer2Name] = useState(multiplayerGameData?.players?.[1]?.username || '');
   const [player1Weapon, setPlayer1Weapon] = useState('sword');
   const [player2Weapon, setPlayer2Weapon] = useState('sword');
   const [player1Stats, setPlayer1Stats] = useState(null);
   const [player2Stats, setPlayer2Stats] = useState(null);
   const [recentMatches, setRecentMatches] = useState([]);
+  const [selectedBackground, setSelectedBackground] = useState(multiplayerGameData?.background || 'dungeon');
+  const isMultiplayer = !!multiplayerGameData;
 
   // Fetch player stats when names change
   useEffect(() => {
@@ -53,7 +56,7 @@ function FightSetup({ onStartFight, onCancel }) {
 
   const handleStart = () => {
     if (player1Name.trim() && player2Name.trim()) {
-      onStartFight(player1Name.trim(), player2Name.trim(), player1Weapon, player2Weapon);
+      onStartFight(player1Name.trim(), player2Name.trim(), player1Weapon, player2Weapon, selectedBackground);
     }
   };
 
@@ -148,6 +151,11 @@ function FightSetup({ onStartFight, onCancel }) {
           </div>
         </div>
       </div>
+
+      <BackgroundSelector 
+        onSelect={setSelectedBackground}
+        currentBackground={selectedBackground}
+      />
 
       {recentMatches.length > 0 && (
         <div className="recent-matches">

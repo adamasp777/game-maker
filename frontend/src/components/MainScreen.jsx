@@ -6,37 +6,42 @@ function MainScreen({
   onJsonEditor, 
   onShare, 
   onFight, 
+  onMultiplayer,
   onObjects,
   onScoreboard,
+  onLogout,
   character1, 
   character2, 
   gameData,
-  objects 
+  objects,
+  user
 }) {
   const [isPlaying, setIsPlaying] = useState(false);
 
   return (
     <div className="main-screen">
-      <h1>🎮 Game Maker</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h1>🎮 Game Maker</h1>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <span style={{ color: '#666' }}>👤 {user?.username}</span>
+          <button className="btn btn-secondary" onClick={onLogout} style={{ padding: '8px 16px' }}>
+            Logout
+          </button>
+        </div>
+      </div>
       
       <div className="button-row">
         <button className="btn btn-primary" onClick={onCharacterMaker}>
-          🎨 Characters
-        </button>
-        <button className="btn btn-secondary" onClick={onJsonEditor}>
-          📝 JSON Editor
-        </button>
-        <button className="btn btn-objects" onClick={onObjects}>
-          🏠 Objects
+          🎨 Character Creator
         </button>
         <button className="btn btn-fight" onClick={onFight}>
-          ⚔️ Fight!
+          ⚔️ Local Fight
+        </button>
+        <button className="btn btn-multiplayer" onClick={onMultiplayer}>
+          🌐 Multiplayer
         </button>
         <button className="btn btn-scores" onClick={onScoreboard}>
-          🏆 Scores
-        </button>
-        <button className="btn btn-accent" onClick={onShare}>
-          📤 Share
+          🏆 Scoreboard
         </button>
       </div>
       

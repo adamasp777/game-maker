@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import Auth from './components/Auth';
 import MainScreen from './components/MainScreen';
 import CharacterMaker from './components/CharacterMaker';
 import JsonEditor from './components/JsonEditor';
@@ -7,6 +8,9 @@ import FightModule from './components/FightModule';
 import FightSetup from './components/FightSetup';
 import Scoreboard from './components/Scoreboard';
 import ObjectLibrary from './components/ObjectLibrary';
+import MultiplayerLobby from './components/MultiplayerLobby';
+import MultiplayerWeaponSelector from './components/MultiplayerWeaponSelector';
+import { initializeSocket, connectSocket, disconnectSocket, getSocket } from './utils/socket';
 
 const defaultCharacter1 = {
   head: '#FFD93D',
@@ -49,6 +53,9 @@ const defaultGameData = {
 };
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const [screen, setScreen] = useState('main');
   const [character1, setCharacter1] = useState(defaultCharacter1);
   const [character2, setCharacter2] = useState(defaultCharacter2);
@@ -60,8 +67,58 @@ function App() {
   const [showFight, setShowFight] = useState(false);
   const [showObjects, setShowObjects] = useState(false);
   const [showScoreboard, setShowScoreboard] = useState(false);
+  const [showMultiplayer, setShowMultiplayer] = useState(false);
+  const [showWeaponSelector, setShowWeaponSelector] = useState(false);
   const [playerNames, setPlayerNames] = useState({ player1: 'Player 1', player2: 'Player 2' });
   const [playerWeapons, setPlayerWeapons] = useState({ player1: 'sword', player2: 'sword' });
+  const [selectedBackground, setSelectedBackground] = useState('dungeon');
+  const [multiplayerGameData, setMultiplayerGameData] = useState(null);
+  const [isHost, setIsHost] = useState(false);
+  const [currentRoomId, setCurrentRoomId] = useState(null);
+  
+  // Check for existing auth on mount
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('user');
+    
+    if (storedToken && storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        setToken(storedToken);
+        setUser(userData);
+        setIsAuthenticated(true);
+        
+        // Initialize socket
+        initializeSocket(storedToken);
+        connectSocket();
+      } catch (error) {
+        console.error('Failed to restore session:', error);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
+    }
+  }, []);
+  
+  
+  const handleLoginSuccess = (authToken, userData) => {
+    setToken(authToken);
+    setUser(userData);
+    setIsAuthenticated(true);
+    
+    // Initialize socket
+    initializeSocket(authToken);
+    connectSocket();
+  };
+  
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
+    disconnectSocket();
+    setScreen('main');
+  };
 
   const handleAddObject = (obj) => {
     setObjects(prev => [...prev, obj]);
@@ -79,6 +136,11 @@ function App() {
     }));
   };
 
+  // Show auth screen if not authenticated
+  if (!isAuthenticated) {
+    return <Auth onLoginSuccess={handleLoginSuccess} />;
+  }
+  
   return (
     <div className="app">
       {screen === 'main' && (
@@ -87,12 +149,15 @@ function App() {
           onJsonEditor={() => setScreen('editor')}
           onShare={() => setShowShare(true)}
           onFight={() => setShowFightSetup(true)}
+          onMultiplayer={() => setShowMultiplayer(true)}
           onObjects={() => setShowObjects(true)}
           onScoreboard={() => setShowScoreboard(true)}
+          onLogout={handleLogout}
           character1={character1}
           character2={character2}
           gameData={gameData}
           objects={objects}
+          user={user}
         />
       )}
       
@@ -129,13 +194,37 @@ function App() {
       
       {showFightSetup && (
         <FightSetup
-          onStartFight={(name1, name2, weapon1, weapon2) => {
+          multiplayerGameData={multiplayerGameData}
+          onStartFight={(name1, name2, weapon1, weapon2, background) => {
             setPlayerNames({ player1: name1, player2: name2 });
             setPlayerWeapons({ player1: weapon1, player2: weapon2 });
+            setSelectedBackground(background || 'dungeon');
+
+            // If multiplayer and host, emit config to other players
+            if (multiplayerGameData && isHost) {
+              const socket = getSocket();
+              if (socket?.connected) {
+                socket.emit('game:config', {
+                  roomId: currentRoomId,
+                  player1Name: name1,
+                  player2Name: name2,
+                  player1Weapon: weapon1,
+                  player2Weapon: weapon2,
+                  background: background || 'dungeon'
+                });
+              }
+            }
+
             setShowFightSetup(false);
             setShowFight(true);
           }}
-          onCancel={() => setShowFightSetup(false)}
+          onCancel={() => {
+            setShowFightSetup(false);
+            if (multiplayerGameData) {
+              setMultiplayerGameData(null);
+              setShowMultiplayer(true);
+            }
+          }}
         />
       )}
       
@@ -147,7 +236,15 @@ function App() {
           player2Name={playerNames.player2}
           player1Weapon={playerWeapons.player1}
           player2Weapon={playerWeapons.player2}
-          onClose={() => setShowFight(false)}
+          background={selectedBackground}
+          isMultiplayer={!!multiplayerGameData}
+          multiplayerData={multiplayerGameData}
+          onClose={() => {
+            setShowFight(false);
+            if (multiplayerGameData) {
+              setMultiplayerGameData(null);
+            }
+          }}
         />
       )}
       
@@ -159,6 +256,46 @@ function App() {
         <ObjectLibrary
           onAddObject={handleAddObject}
           onClose={() => setShowObjects(false)}
+        />
+      )}
+      
+      {showMultiplayer && (
+        <MultiplayerLobby
+          onStartGame={(gameData) => {
+            setMultiplayerGameData(gameData);
+            setIsHost(gameData.isHost);
+            setCurrentRoomId(gameData.roomId);
+            setShowMultiplayer(false);
+            setShowWeaponSelector(true);
+          }}
+          onBack={() => setShowMultiplayer(false)}
+          character1={character1}
+          character2={character2}
+          user={user}
+        />
+      )}
+      
+      {showWeaponSelector && multiplayerGameData && (
+        <MultiplayerWeaponSelector
+          isHost={isHost}
+          playerName={user.username}
+          opponentName={multiplayerGameData.players?.[isHost ? 1 : 0]?.username || 'Opponent'}
+          roomId={currentRoomId}
+          onReady={(config) => {
+            setPlayerWeapons({
+              player1: config.player1Weapon,
+              player2: config.player2Weapon
+            });
+            setSelectedBackground(config.background || 'dungeon');
+            if (config.player1Name && config.player2Name) {
+              setPlayerNames({
+                player1: config.player1Name,
+                player2: config.player2Name
+              });
+            }
+            setShowWeaponSelector(false);
+            setShowFight(true);
+          }}
         />
       )}
     </div>

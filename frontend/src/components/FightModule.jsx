@@ -1,8 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { getSocket } from '../utils/socket';
+import { BackgroundRenderer } from './backgrounds/Backgrounds';
+import VictoryScreen from './VictoryScreen';
+import { API_URL } from '../utils/api';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-
-function FightModule({ character1, character2, player1Name = 'Player 1', player2Name = 'Player 2', player1Weapon = 'sword', player2Weapon = 'sword', onClose, onFightEnd }) {
+function FightModule({ 
+  character1, 
+  character2, 
+  player1Name = 'Player 1', 
+  player2Name = 'Player 2', 
+  player1Weapon = 'sword', 
+  player2Weapon = 'sword', 
+  background = 'dungeon',
+  isMultiplayer = false,
+  multiplayerData = null,
+  onClose, 
+  onFightEnd 
+}) {
   
   // Weapon drawing functions
   const drawWeapon = (ctx, weapon, flipped) => {
@@ -186,6 +200,11 @@ function FightModule({ character1, character2, player1Name = 'Player 1', player2
     flowerGrowth: 0, // 0-100 for flower growing
     matchRecorded: false
   });
+  
+  // Determine local player number for multiplayer
+  const localPlayerNumber = isMultiplayer && multiplayerData ? 
+    (multiplayerData.isHost ? 1 : 2) : null;
+  const isLocalPlayerTurn = !isMultiplayer || localPlayerNumber === gameState.turn;
   const [battleLog, setBattleLog] = useState([]);
   const [animationFrame, setAnimationFrame] = useState(0);
   
@@ -200,6 +219,40 @@ function FightModule({ character1, character2, player1Name = 'Player 1', player2
       return () => cancelAnimationFrame(animId);
     }
   }, [gameState.winner, gameState.deathAnimation, animationFrame]);
+  
+  // Listen for multiplayer game actions
+  useEffect(() => {
+    if (!isMultiplayer) return;
+    
+    const socket = getSocket();
+    if (!socket) return;
+    
+    const handleGameAction = (action) => {
+      console.log('Received game action:', action);
+      
+      // Apply action from other player
+      if (action.type === 'attack') {
+        animateAttack(action.attacker, action.defender);
+      } else if (action.type === 'defend') {
+        const currentPlayer = action.defender === 1 ? 'player1' : 'player2';
+        setGameState(prev => ({
+          ...prev,
+          [currentPlayer]: { ...prev[currentPlayer], defending: true },
+          turn: action.nextTurn,
+          message: `${getPlayerName(action.nextTurn)}'s turn!`
+        }));
+        addLog(`${getPlayerName(action.defender)} is defending!`);
+      } else if (action.type === 'special') {
+        handleSpecialAction(action);
+      }
+    };
+    
+    socket.on('game:action', handleGameAction);
+    
+    return () => {
+      socket.off('game:action', handleGameAction);
+    };
+  }, [isMultiplayer, gameState]);
 
   const addLog = (msg) => {
     setBattleLog(prev => [...prev.slice(-4), msg]);
@@ -305,40 +358,62 @@ function FightModule({ character1, character2, player1Name = 'Player 1', player2
 
   const handleAttack = () => {
     if (gameState.isAnimating || gameState.winner) return;
-    animateAttack(gameState.turn, gameState.turn === 1 ? 2 : 1);
+    if (isMultiplayer && !isLocalPlayerTurn) return;
+    
+    const attacker = gameState.turn;
+    const defender = attacker === 1 ? 2 : 1;
+    
+    // Emit to other player in multiplayer
+    if (isMultiplayer) {
+      const socket = getSocket();
+      socket.emit('game:action', {
+        type: 'attack',
+        attacker,
+        defender
+      });
+    }
+    
+    animateAttack(attacker, defender);
   };
 
   const handleDefend = () => {
     if (gameState.isAnimating || gameState.winner) return;
+    if (isMultiplayer && !isLocalPlayerTurn) return;
     
-    const currentPlayer = gameState.turn === 1 ? 'player1' : 'player2';
+    const defender = gameState.turn;
+    const nextTurn = defender === 1 ? 2 : 1;
+    const currentPlayer = defender === 1 ? 'player1' : 'player2';
+    
+    // Emit to other player in multiplayer
+    if (isMultiplayer) {
+      const socket = getSocket();
+      socket.emit('game:action', {
+        type: 'defend',
+        defender,
+        nextTurn
+      });
+    }
+    
     setGameState(prev => ({
       ...prev,
       [currentPlayer]: { ...prev[currentPlayer], defending: true },
-      turn: prev.turn === 1 ? 2 : 1,
-      message: `${getPlayerName(prev.turn === 1 ? 2 : 1)}'s turn!`
+      turn: nextTurn,
+      message: `${getPlayerName(nextTurn)}'s turn!`
     }));
-    addLog(`${getPlayerName(gameState.turn)} is defending!`);
+    addLog(`${getPlayerName(defender)} is defending!`);
   };
 
-  const handleSpecial = () => {
-    if (gameState.isAnimating || gameState.winner) return;
-    
-    const attacker = gameState.turn;
-    const defenderKey = attacker === 1 ? 'player2' : 'player1';
-    
-    // Special attack: 50% chance for double damage, 50% chance to miss
-    const hit = Math.random() > 0.4;
+  const handleSpecialAction = (action) => {
+    const { attacker, defender, hit, damage, newHealth, nextTurn } = action;
+    const defenderKey = defender === 1 ? 'player1' : 'player2';
     
     if (hit) {
-      const damage = Math.floor(Math.random() * 20) + 20; // 20-40 damage
-      const newHealth = Math.max(0, gameState[defenderKey].health - damage);
-      
       setGameState(prev => ({
         ...prev,
-        [defenderKey]: { ...prev[defenderKey], health: newHealth, defending: false }
+        [defenderKey]: { ...prev[defenderKey], health: newHealth, defending: false },
+        turn: nextTurn,
+        message: `${getPlayerName(nextTurn)}'s turn!`
       }));
-      
       addLog(`${getPlayerName(attacker)} special attack hits for ${damage}!`);
       
       if (newHealth <= 0) {
@@ -359,6 +434,7 @@ function FightModule({ character1, character2, player1Name = 'Player 1', player2
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ winnerName, loserName, winnerHealth })
         }).catch(err => console.error('Failed to record match:', err));
+        
         // Start death animation
         let animProgress = 0;
         const deathInterval = setInterval(() => {
@@ -377,18 +453,54 @@ function FightModule({ character1, character2, player1Name = 'Player 1', player2
           }
         }, 40);
         if (onFightEnd) onFightEnd(attacker);
-        return;
       }
     } else {
       addLog(`${getPlayerName(attacker)}'s special attack missed!`);
+      setGameState(prev => ({
+        ...prev,
+        turn: nextTurn,
+        message: `${getPlayerName(nextTurn)}'s turn!`
+      }));
+    }
+  };
+
+  const handleSpecial = () => {
+    if (gameState.isAnimating || gameState.winner) return;
+    if (isMultiplayer && !isLocalPlayerTurn) return;
+    
+    const attacker = gameState.turn;
+    const defender = attacker === 1 ? 2 : 1;
+    const defenderKey = attacker === 1 ? 'player2' : 'player1';
+    
+    // Special attack: 60% chance to hit, 40% chance to miss
+    const hit = Math.random() > 0.4;
+    const damage = hit ? Math.floor(Math.random() * 20) + 20 : 0; // 20-40 damage if hit
+    const newHealth = hit ? Math.max(0, gameState[defenderKey].health - damage) : gameState[defenderKey].health;
+    const nextTurn = attacker === 1 ? 2 : 1;
+    
+    // Emit to other player in multiplayer
+    if (isMultiplayer) {
+      const socket = getSocket();
+      socket.emit('game:action', {
+        type: 'special',
+        attacker,
+        defender,
+        hit,
+        damage,
+        newHealth,
+        nextTurn
+      });
     }
     
-    const nextTurn = attacker === 1 ? 2 : 1;
-    setGameState(prev => ({
-      ...prev,
-      turn: nextTurn,
-      message: `${getPlayerName(nextTurn)}'s turn!`
-    }));
+    // Apply locally via shared handler
+    handleSpecialAction({
+      attacker,
+      defender,
+      hit,
+      damage,
+      newHealth,
+      nextTurn
+    });
   };
 
   const resetFight = () => {
@@ -409,17 +521,15 @@ function FightModule({ character1, character2, player1Name = 'Player 1', player2
   // Draw the battle scene
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return; // Canvas not mounted yet or component unmounted
+    
     const ctx = canvas.getContext('2d');
     
-    // Background
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, '#1a1a2e');
-    gradient.addColorStop(1, '#16213e');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Clear canvas (transparent background to show BackgroundRenderer behind)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Arena floor
-    ctx.fillStyle = '#0f3460';
+    // Arena floor (semi-transparent)
+    ctx.fillStyle = 'rgba(15, 52, 96, 0.6)';
     ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
     
     // Draw characters with swords and hats
@@ -797,14 +907,43 @@ function FightModule({ character1, character2, player1Name = 'Player 1', player2
     
   }, [gameState, character1, character2, animationFrame, player1Name, player2Name]);
 
+  // Show victory screen when fight ends
+  if (gameState.winner && gameState.flowerGrowth >= 100) {
+    const loser = gameState.winner === 1 ? 2 : 1;
+    const winnerHealth = gameState.winner === 1 ? gameState.player1.health : gameState.player2.health;
+    const socket = isMultiplayer ? getSocket() : null;
+    
+    return (
+      <VictoryScreen
+        winnerName={getPlayerName(gameState.winner)}
+        loserName={getPlayerName(loser)}
+        winnerHealth={winnerHealth}
+        isWinner={!isMultiplayer || localPlayerNumber === gameState.winner}
+        isMultiplayer={isMultiplayer}
+        socket={socket}
+        onClose={onClose}
+      />
+    );
+  }
+
   return (
     <div className="fight-module">
+      {/* Animated background behind everything */}
+      <div style={{ position: 'relative', width: '100%', height: '300px' }}>
+        <BackgroundRenderer backgroundKey={background} />
+        <canvas 
+          ref={canvasRef} 
+          width={400} 
+          height={300} 
+          className="fight-canvas"
+          style={{ position: 'absolute', top: 0, left: 0 }}
+        />
+      </div>
+      
       <div className="fight-header">
         <h2>⚔️ Battle Arena</h2>
         <button className="btn-close" onClick={onClose}>×</button>
       </div>
-      
-      <canvas ref={canvasRef} width={400} height={300} className="fight-canvas" />
       
       <div className="battle-log">
         {battleLog.map((log, i) => (
@@ -818,24 +957,40 @@ function FightModule({ character1, character2, player1Name = 'Player 1', player2
             <button 
               className="btn btn-attack" 
               onClick={handleAttack}
-              disabled={gameState.isAnimating}
+              disabled={gameState.isAnimating || (isMultiplayer && !isLocalPlayerTurn)}
+              title={isMultiplayer && !isLocalPlayerTurn ? "Wait for your turn" : "Attack your opponent"}
             >
               ⚔️ Attack
             </button>
             <button 
               className="btn btn-defend" 
               onClick={handleDefend}
-              disabled={gameState.isAnimating}
+              disabled={gameState.isAnimating || (isMultiplayer && !isLocalPlayerTurn)}
+              title={isMultiplayer && !isLocalPlayerTurn ? "Wait for your turn" : "Defend against attack"}
             >
               🛡️ Defend
             </button>
             <button 
               className="btn btn-special" 
               onClick={handleSpecial}
-              disabled={gameState.isAnimating}
+              disabled={gameState.isAnimating || (isMultiplayer && !isLocalPlayerTurn)}
+              title={isMultiplayer && !isLocalPlayerTurn ? "Wait for your turn" : "Use special attack"}
             >
               ✨ Special
             </button>
+            {isMultiplayer && (
+              <div className="turn-indicator" style={{
+                marginTop: '10px',
+                padding: '10px',
+                background: isLocalPlayerTurn ? '#4ade80' : '#94a3b8',
+                color: 'white',
+                borderRadius: '8px',
+                fontWeight: 'bold',
+                textAlign: 'center'
+              }}>
+                {isLocalPlayerTurn ? '✅ YOUR TURN' : '⏳ OPPONENT\'S TURN'}
+              </div>
+            )}
           </>
         ) : (
           <button className="btn btn-primary" onClick={resetFight}>

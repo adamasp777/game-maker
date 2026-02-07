@@ -2,18 +2,16 @@ version: '3.8'
 
 services:
   frontend:
-    build: ./frontend
+    image: adamasp777/game-maker-frontend:3.1.4
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend/src:/app/src
     environment:
-      - VITE_API_URL=http://localhost:3001
+      - VITE_API_URL=http://192.168.4.13:3001
     depends_on:
       - backend
 
   backend:
-    build: ./backend
+    image: adamasp777/game-maker-backend:3.1.4
     ports:
       - "3001:3001"
     environment:
@@ -21,6 +19,9 @@ services:
       - SMTP_HOST=smtp
       - SMTP_PORT=25
       - DB_PATH=/app/data/scores.db
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - CORS_ORIGIN=*
+      - LOG_LEVEL=DEBUG
     volumes:
       - game_data:/app/data
     depends_on:
