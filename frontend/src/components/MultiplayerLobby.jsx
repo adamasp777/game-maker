@@ -69,6 +69,12 @@ function MultiplayerLobby({ onStartGame, onBack, character1, character2, user })
   }, [socket, room, mode, onStartGame]);
 
   const handleHostGame = async () => {
+    // Check socket connection first
+    if (!socket || !socket.connected) {
+      setError('Not connected to server. Please refresh the page.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -107,6 +113,12 @@ function MultiplayerLobby({ onStartGame, onBack, character1, character2, user })
   const handleJoinGame = async () => {
     if (!roomCode) {
       setError('Please enter a room code');
+      return;
+    }
+
+    // Check socket connection first
+    if (!socket || !socket.connected) {
+      setError('Not connected to server. Please refresh the page.');
       return;
     }
 
@@ -175,16 +187,31 @@ function MultiplayerLobby({ onStartGame, onBack, character1, character2, user })
       <div style={styles.container}>
         <div style={styles.box}>
           <h1 style={styles.title}>Multiplayer</h1>
-          
+
+          <div style={styles.statusBar}>
+            <div style={{...styles.statusDot, backgroundColor: connectionStatus === 'connected' ? '#4ade80' : '#ef4444'}} />
+            <span>{connectionStatus === 'connected' ? 'Connected' : 'Connecting...'}</span>
+          </div>
+
+          {error && <div style={styles.error}>{error}</div>}
+
           <div style={styles.modeSelection}>
-            <button style={styles.modeButton} onClick={handleHostGame} disabled={loading}>
-              🏠 Host Game
+            <button
+              style={{...styles.modeButton, opacity: connectionStatus !== 'connected' ? 0.6 : 1}}
+              onClick={handleHostGame}
+              disabled={loading || connectionStatus !== 'connected'}
+            >
+              {loading ? '⏳ Creating...' : '🏠 Host Game'}
             </button>
-            <button style={styles.modeButton} onClick={() => setMode('join-prompt')}>
+            <button
+              style={{...styles.modeButton, opacity: connectionStatus !== 'connected' ? 0.6 : 1}}
+              onClick={() => setMode('join-prompt')}
+              disabled={connectionStatus !== 'connected'}
+            >
               🚪 Join Game
             </button>
           </div>
-          
+
           <button style={styles.backButton} onClick={onBack}>
             ← Back
           </button>
