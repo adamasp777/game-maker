@@ -18,10 +18,23 @@ function MultiplayerLobby({ onStartGame, onBack, character1, character2, user })
   const token = localStorage.getItem('token');
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      setError('Socket not initialized. Please log out and log back in.');
+      return;
+    }
 
-    const handleConnect = () => setConnectionStatus('connected');
-    const handleDisconnect = () => setConnectionStatus('disconnected');
+    const handleConnect = () => {
+      setConnectionStatus('connected');
+      setError('');
+    };
+    const handleDisconnect = (reason) => {
+      setConnectionStatus('disconnected');
+      setError(`Disconnected: ${reason}`);
+    };
+    const handleConnectError = (err) => {
+      setConnectionStatus('disconnected');
+      setError(`Connection failed: ${err.message}`);
+    };
     const handlePlayerJoined = ({ players: updatedPlayers }) => {
       setPlayers(updatedPlayers);
     };
@@ -46,6 +59,7 @@ function MultiplayerLobby({ onStartGame, onBack, character1, character2, user })
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
     socket.on('room:player-joined', handlePlayerJoined);
     socket.on('player:ready', handlePlayerReady);
     socket.on('game:start', handleGameStart);
@@ -53,13 +67,21 @@ function MultiplayerLobby({ onStartGame, onBack, character1, character2, user })
     socket.on('room:player-disconnected', handlePlayerDisconnected);
 
     // Set initial connection status
-    setConnectionStatus(socket.connected ? 'connected' : 'disconnected');
+    if (socket.connected) {
+      setConnectionStatus('connected');
+      setError('');
+    } else {
+      setConnectionStatus('disconnected');
+      // Try to connect if not connected
+      if (!socket.connecting) {
+        socket.connect();
+      }
+    }
 
     return () => {
-      // Don't leave room on unmount - players stay in room for entire game session
-      // Only leave when explicitly backing out or disconnecting
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
       socket.off('room:player-joined', handlePlayerJoined);
       socket.off('player:ready', handlePlayerReady);
       socket.off('game:start', handleGameStart);

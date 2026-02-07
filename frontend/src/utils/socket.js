@@ -72,11 +72,17 @@ export function getSocket() {
 
 export function connectSocket() {
   if (socket && !socket.connected) {
-    console.log('[Socket] Attempting to connect Socket.IO...');
+    logger.info('Socket', 'Attempting to connect...', { url: API_URL });
     socket.connect();
   } else if (!socket) {
-    console.error('[Socket] Cannot connect - socket not initialized');
+    logger.error('Socket', 'Cannot connect - socket not initialized. Call initializeSocket first.');
+  } else {
+    logger.debug('Socket', 'Already connected', { socketId: socket.id });
   }
+}
+
+export function isSocketConnected() {
+  return socket && socket.connected;
 }
 
 export function disconnectSocket() {
