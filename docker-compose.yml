@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   frontend:
-    image: adamasp777/game-maker-frontend:3.1.5
+    image: adamasp777/game-maker-frontend:3.1.6
     ports:
       - "3000:3000"
     environment:
@@ -11,7 +11,7 @@ services:
       - backend
 
   backend:
-    image: adamasp777/game-maker-backend:3.1.5
+    image: adamasp777/game-maker-backend:3.1.6
     ports:
       - "3001:3001"
     environment:
